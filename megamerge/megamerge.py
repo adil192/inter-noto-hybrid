@@ -9,7 +9,7 @@ tiers = json.load(open('../fontrepos.json'))
 state = json.load(open('../state.json'))
 warnings = []
 
-def megamerge(newname, base_font, tier_predicate, banned, modulation, weight):
+def megamerge(newname, base_font, tier_predicate, banned, modulation, weight, fallbackWeights):
     glyph_count = len(TTFont(base_font).getGlyphOrder())
     selected_repos = [k for k, v in tiers.items() if tier_predicate(v.get("tier", 4))]
     selected_repos = [k for k in selected_repos if k not in banned]
@@ -23,19 +23,9 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation, weight):
         if not selected_families:
             continue
         all_files = state[repo]["families"][selected_families[0]]["files"]
-        files = [ x for x in all_files if f"{weight}.ttf" in x and "UI" not in x]
         target = None
-        for file in files:
-            if "/hinted/" in file:
-                target = file
-                break
-        if target is None:
-            for file in files:
-                if "/unhinted/" in file:
-                    target = file
-                    break
-        if target is None:
-            files = [ x for x in all_files if "Regular.ttf" in x and "UI" not in x]
+        for weight in [weight, *fallbackWeights]:
+            files = [ x for x in all_files if f"{weight}.ttf" in x and "UI" not in x]
             for file in files:
                 if "/hinted/" in file:
                     target = file
@@ -45,6 +35,8 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation, weight):
                     if "/unhinted/" in file:
                         target = file
                         break
+            if target is not None:
+                break
         if target is None:
             print(f"Couldn't find a target for {repo}")
             continue
@@ -83,13 +75,14 @@ for modulation in ["Sans"]:
     if modulation == "sans":
         banned.append("devanagari")  # Already included
 
-    for weight in ["Regular", "Bold"]:
-        megamerge(f"Noto {modulation} Living - {weight}",
+    for weight, fallbackWeights in weightsAndFallbacks:
+        megamerge(f"Inter Noto {modulation} Hybrid - {weight}",
                 base_font=f"../fonts/Inter/Inter-UPM1000-{weight}.ttf",
                 tier_predicate= lambda x: x <= 3,
                 banned=banned,
                 modulation=modulation,
-                weight=weight
+                weight=weight,
+                fallbackWeights=fallbackWeights,
                 )
 
 if warnings:
