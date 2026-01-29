@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 from fontTools.ttLib import TTFont
 from fontTools.merge import Merger, Options
 from gftools.fix import rename_font
@@ -61,6 +62,21 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation, weight):
     rename_font(merged, newname)
     merged.save(newname.replace(" ","")+".ttf")
 
+weightsAndFallbacks = [
+    ("Thin", ["ExtraLight", "Light", "Regular"]),
+    ("ExtraLight", ["Light", "Regular"]),
+    ("Light", ["Regular"]),
+    ("Regular", []),
+    ("Medium", ["Regular", "SemiBold"]),
+    ("SemiBold", ["Bold", "Regular"]),
+    ("Bold", ["ExtraBold", "SemiBold", "Black", "Regular"]),
+    ("ExtraBold", ["Black", "Bold", "SemiBold", "Regular"]),
+    ("Black", ["ExtraBold", "Bold", "SemiBold", "Regular"]),
+]
+
+# Convert Inter to 1000 UPM
+for weight, fallbackWeights in weightsAndFallbacks:
+    subprocess.Popen(f'fontforge -lang=ff -c \' Open("../fonts/Inter/Inter_24pt-{weight}.ttf"); ScaleToEm(1000); Generate("../fonts/Inter/Inter-UPM1000-{weight}.ttf"); \'', shell=True).wait()
 
 for modulation in ["Sans"]:
     banned = ["duployan", "latin-greek-cyrillic", "sign-writing", "test"]
@@ -69,7 +85,7 @@ for modulation in ["Sans"]:
 
     for weight in ["Regular", "Bold"]:
         megamerge(f"Noto {modulation} Living - {weight}",
-                base_font=f"../fonts/Inter/Inter_24pt-{weight}.ttf",
+                base_font=f"../fonts/Inter/Inter-UPM1000-{weight}.ttf",
                 tier_predicate= lambda x: x <= 3,
                 banned=banned,
                 modulation=modulation,
