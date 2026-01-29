@@ -8,7 +8,7 @@ tiers = json.load(open('../fontrepos.json'))
 state = json.load(open('../state.json'))
 warnings = []
 
-def megamerge(newname, base_font, tier_predicate, banned, modulation):
+def megamerge(newname, base_font, tier_predicate, banned, modulation, weight):
     glyph_count = len(TTFont(base_font).getGlyphOrder())
     selected_repos = [k for k, v in tiers.items() if tier_predicate(v.get("tier", 4))]
     selected_repos = [k for k in selected_repos if k not in banned]
@@ -21,8 +21,8 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation):
         selected_families = [x for x in state[repo]["families"].keys() if modulation in x and "UI" not in x]
         if not selected_families:
             continue
-        files = state[repo]["families"][selected_families[0]]["files"]
-        files = [ x for x in files if "Regular.ttf" in x and "UI" not in x]
+        all_files = state[repo]["families"][selected_families[0]]["files"]
+        files = [ x for x in all_files if f"{weight}.ttf" in x and "UI" not in x]
         target = None
         for file in files:
             if "/hinted/" in file:
@@ -33,6 +33,17 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation):
                 if "/unhinted/" in file:
                     target = file
                     break
+        if target is None:
+            files = [ x for x in all_files if "Regular.ttf" in x and "UI" not in x]
+            for file in files:
+                if "/hinted/" in file:
+                    target = file
+                    break
+            if target is None:
+                for file in files:
+                    if "/unhinted/" in file:
+                        target = file
+                        break
         if target is None:
             print(f"Couldn't find a target for {repo}")
             continue
@@ -48,25 +59,22 @@ def megamerge(newname, base_font, tier_predicate, banned, modulation):
     merger = Merger(options=Options(drop_tables=["vmtx", "vhea", "MATH"]))
     merged = merger.merge(mergelist)
     rename_font(merged, newname)
-    merged.save(newname.replace(" ","")+"-Regular.ttf")
+    merged.save(newname.replace(" ","")+".ttf")
 
 
-for modulation in ["Sans", "Serif"]:
+for modulation in ["Sans"]:
     banned = ["duployan", "latin-greek-cyrillic", "sign-writing", "test"]
     if modulation == "sans":
         banned.append("devanagari")  # Already included
-    megamerge(f"Noto {modulation} Living", 
-            base_font=f"../fonts/Noto{modulation}/googlefonts/ttf/Noto{modulation}-Regular.ttf",
-            tier_predicate= lambda x: x <= 3,
-            banned=banned,
-            modulation=modulation,
-            )
-    megamerge(f"Noto {modulation} Historical", 
-            base_font=f"../fonts/Noto{modulation}/googlefonts/ttf/Noto{modulation}-Regular.ttf",
-            tier_predicate= lambda x: x > 3,
-            banned=banned,
-            modulation=modulation
-            )
+
+    for weight in ["Regular", "Bold"]:
+        megamerge(f"Noto {modulation} Living - {weight}",
+                base_font=f"../fonts/Inter/Inter_24pt-{weight}.ttf",
+                tier_predicate= lambda x: x <= 3,
+                banned=banned,
+                modulation=modulation,
+                weight=weight
+                )
 
 if warnings:
     print("\n\nWARNINGS:")
