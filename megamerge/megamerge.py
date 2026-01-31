@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from typing import List
 from fontTools.merge import Merger, Options
+from fontTools.ttLib import TTFont
 from gftools.fix import rename_font
 
 tiers = json.load(open('../fontrepos.json'))
@@ -22,6 +23,7 @@ weightsAndFallbackWeights = [
 ]
 
 def findUnprocessedNotoFonts(weight, fallbackWeights) -> List[str]:
+    """Returns a list of Noto fonts matching the given weight (or a fallback weight)"""
     banned = ["duployan", "latin-greek-cyrillic", "sign-writing", "test", "devanagari"]
     selected_repos = [k for k, v in tiers.items() if v.get("tier", 4) <= 3]
     selected_repos = [k for k in selected_repos if k not in banned]
@@ -59,9 +61,16 @@ def megamerge(newname, mergeList):
     print("Merging: ")
     for x in mergeList:
         print("  "+os.path.basename(x))
-    merger = Merger(options=Options(drop_tables=["vmtx", "vhea", "MATH"]))
+
+    merger = Merger(options=Options(drop_tables=["vmtx", "vhea", "MATH", "GSUB"]))
     merged = merger.merge(mergeList)
     rename_font(merged, newname)
+
+    # Preserve some tables from Inter
+    inter = TTFont(mergeList[0])
+    merged["hhea"] = inter["hhea"]
+    merged["OS/2"] = inter["OS/2"]
+
     merged.save(newname.replace(" ","")+".ttf")
 
 def resizeInterFonts():
