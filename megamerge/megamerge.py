@@ -1,17 +1,29 @@
 import json
 import os
+import shutil
 import subprocess
-from fontTools.ttLib import TTFont
+from typing import List
 from fontTools.merge import Merger, Options
 from gftools.fix import rename_font
 
 tiers = json.load(open('../fontrepos.json'))
 state = json.load(open('../state.json'))
-warnings = []
 
-def findNotoFonts(weight, fallbackWeights, tier_predicate):
+weightsAndFallbackWeights = [
+    ("Thin", ["ExtraLight", "Light", "Regular"]),
+    ("ExtraLight", ["Light", "Thin", "Regular"]),
+    ("Light", ["Regular"]),
+    ("Regular", []),
+    ("Medium", ["Regular", "SemiBold"]),
+    ("SemiBold", ["Bold", "Regular"]),
+    ("Bold", ["ExtraBold", "SemiBold", "Black", "Regular"]),
+    ("ExtraBold", ["Black", "Bold", "SemiBold", "Regular"]),
+    ("Black", ["ExtraBold", "Bold", "SemiBold", "Regular"]),
+]
+
+def findUnprocessedNotoFonts(weight, fallbackWeights) -> List[str]:
     banned = ["duployan", "latin-greek-cyrillic", "sign-writing", "test", "devanagari"]
-    selected_repos = [k for k, v in tiers.items() if tier_predicate(v.get("tier", 4))]
+    selected_repos = [k for k, v in tiers.items() if v.get("tier", 4) <= 3]
     selected_repos = [k for k in selected_repos if k not in banned]
     selected_repos = sorted(selected_repos, key=lambda k: tiers[k]["tier"])
     selected_fonts = []
@@ -43,64 +55,53 @@ def findNotoFonts(weight, fallbackWeights, tier_predicate):
         selected_fonts.append("../"+target)
     return selected_fonts
 
-def megamerge(newname, base_font, tier_predicate, weight, fallbackWeights):
-    glyph_count = len(TTFont(base_font).getGlyphOrder())
-    noto_fonts = findNotoFonts(weight, fallbackWeights, tier_predicate)
-    mergelist = [base_font]
-    for noto_font in noto_fonts:
-        font = TTFont(noto_font)
-        glyph_count += len(font.getGlyphOrder())
-        if glyph_count > 65535:
-            warnings.append(f"Too many glyphs while building {newname}, stopped at {noto_font}")
-            break
-        mergelist.append(noto_font)
-
+def megamerge(newname, mergeList):
     print("Merging: ")
-    for x in mergelist:
+    for x in mergeList:
         print("  "+os.path.basename(x))
     merger = Merger(options=Options(drop_tables=["vmtx", "vhea", "MATH"]))
-    merged = merger.merge(mergelist)
+    merged = merger.merge(mergeList)
     rename_font(merged, newname)
     merged.save(newname.replace(" ","")+".ttf")
 
-weightsAndFallbacks = [
-    ("Thin", ["ExtraLight", "Light", "Regular"]),
-    ("ExtraLight", ["Light", "Thin", "Regular"]),
-    ("Light", ["Regular"]),
-    ("Regular", []),
-    ("Medium", ["Regular", "SemiBold"]),
-    ("SemiBold", ["Bold", "Regular"]),
-    ("Bold", ["ExtraBold", "SemiBold", "Black", "Regular"]),
-    ("ExtraBold", ["Black", "Bold", "SemiBold", "Regular"]),
-    ("Black", ["ExtraBold", "Bold", "SemiBold", "Regular"]),
-]
-
-# Create temporary directories
-os.makedirs("tmp", exist_ok=True)
-os.makedirs("tmp/Inter", exist_ok=True)
-
-# Convert Inter to 1000 UPM
-for weight, _ in weightsAndFallbacks:
-    subprocess.Popen(f'''fontforge -lang=ff -c \'
+def resizeInterFonts():
+    """Convert Inter to 1000 UPM to make it compatible with Noto"""
+    os.makedirs("tmp/Inter", exist_ok=True)
+    for weight, _ in weightsAndFallbackWeights:
+        subprocess.Popen(f'''fontforge -lang=ff -c \'
 Open("../fonts/Inter/Inter_24pt-{weight}.ttf");
 ScaleToEm(1000);
 Generate("./tmp/Inter/Inter-UPM1000-{weight}.ttf");
 \'''', shell=True).wait()
-# Remove characters from Noto Sans that are already in Inter
-for weight, fallbackWeights in weightsAndFallbacks:
-    pass
 
-for weight, fallbackWeights in weightsAndFallbacks:
-    megamerge(f"Inter Noto Sans Hybrid - {weight}",
-            base_font=f"tmp/Inter/Inter-UPM1000-{weight}.ttf",
-            tier_predicate= lambda x: x <= 3,
-            weight=weight,
-            fallbackWeights=fallbackWeights,
-            )
+def getMergeLists():
+    """
+    Returns a list like this: [
+        ("Thin", ["path/to/Inter-Thin.ttf", "path/to/NotoSansAdlam-Thin.ttf"]),
+        ...
+    ]
+    """
+    mergeLists: List[(str, List[str])] = []
+    for weight, fallbackWeights in weightsAndFallbackWeights:
+        mergeList: List[str] = [f"tmp/Inter/Inter-UPM1000-{weight}.ttf"]
+        unprocessed_fonts = findUnprocessedNotoFonts(weight, fallbackWeights)
+        for unprocessed_font in unprocessed_fonts:
+            processed_font = unprocessed_font.replace("../fonts/", "tmp/")
+            mergeList.append(processed_font)
+            os.makedirs(os.path.dirname(processed_font), exist_ok=True)
+            if os.path.isfile(processed_font):
+                continue
+            # TODO: Process font if needed
+            # For now, just copy the font.
+            shutil.copy(unprocessed_font, processed_font)
+        mergeLists.append((weight, mergeList))
+    return mergeLists
 
-if warnings:
-    print("\n\nWARNINGS:")
-    for w in warnings:
-        print(w)
-else:
-    print("Completed successfully")
+if __name__ == "__main__":
+    resizeInterFonts()
+    mergeLists = getMergeLists()
+
+    for (weight, mergeList) in mergeLists:
+        megamerge(f"Inter Noto Sans Hybrid - {weight}", mergeList)
+
+    print("Done")
