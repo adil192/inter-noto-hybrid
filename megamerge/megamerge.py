@@ -24,7 +24,7 @@ weightsAndFallbackWeights = [
 
 def findUnprocessedNotoFonts(weight, fallbackWeights) -> List[str]:
     """Returns a list of Noto fonts matching the given weight (or a fallback weight)"""
-    banned = ["duployan", "latin-greek-cyrillic", "sign-writing", "test", "devanagari"]
+    banned = ["devanagari", "duployan", "georgian", "latin-greek-cyrillic", "sign-writing", "symbols", "test"]
     selected_repos = [k for k, v in tiers.items() if v.get("tier", 4) <= 3]
     selected_repos = [k for k in selected_repos if k not in banned]
     selected_repos = sorted(selected_repos, key=lambda k: tiers[k]["tier"])
@@ -39,7 +39,7 @@ def findUnprocessedNotoFonts(weight, fallbackWeights) -> List[str]:
         all_files = state[repo]["families"][selected_families[0]]["files"]
         target = None
         for weight in [weight, *fallbackWeights]:
-            files = [ x for x in all_files if f"{weight}.ttf" in x and "UI" not in x]
+            files = [ x for x in all_files if f"{weight}.ttf" in x and "UI" not in x and "Condensed" not in x]
             for file in files:
                 if "/hinted/" in file:
                     target = file
